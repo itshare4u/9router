@@ -56,8 +56,10 @@ try { ensureSqliteRuntime({ silent: true }); } catch {}
 try { ensureTrayRuntime({ silent: true }); } catch {}
 
 // Configuration constants
-const APP_NAME = pkg.name; // Use from package.json
-const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
+const PACKAGE_NAME = pkg.name;
+const APP_NAME = Object.keys(pkg.bin || {})[0] || "9router";
+const REGISTRY_PACKAGE_NAME = encodeURIComponent(PACKAGE_NAME);
+const INSTALL_CMD_LATEST = `npm i -g ${PACKAGE_NAME}@latest --prefer-online`;
 
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "0.0.0.0";
@@ -428,7 +430,7 @@ function checkForUpdate() {
       resolve(version);
     };
 
-    const req = https.get(`https://registry.npmjs.org/${pkg.name}/latest`, { timeout: 3000 }, (res) => {
+    const req = https.get(`https://registry.npmjs.org/${REGISTRY_PACKAGE_NAME}/latest`, { timeout: 3000 }, (res) => {
       let data = "";
       res.on("data", chunk => data += chunk);
       res.on("end", () => {

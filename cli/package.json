@@ -1,9 +1,22 @@
 {
-  "name": "9router",
+  "name": "@itshare4u/9router",
   "version": "0.4.66",
   "description": "9Router CLI - Start and manage 9Router server",
+  "homepage": "https://github.com/itshare4u/9router#readme",
+  "bugs": {
+    "url": "https://github.com/itshare4u/9router/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itshare4u/9router.git",
+    "directory": "cli"
+  },
   "bin": {
     "9router": "./cli.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "files": [
     "cli.js",
@@ -17,7 +30,8 @@
     "dev": "nodemon -I --watch cli.js --watch src --watch hooks --ext js,json cli.js",
     "build": "node scripts/build-cli.js",
     "pack:cli": "npm run build && npm pack --pack-destination ../..",
-    "publish:cli": "npm run build && npm publish",
+    "publish:dry-run": "npm publish --dry-run --access public",
+    "publish:cli": "npm publish --access public",
     "postinstall": "node hooks/postinstall.js",
     "prepublishOnly": "npm run build"
   },
