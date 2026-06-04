@@ -57,8 +57,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
-  const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode";
-  let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  const providerRequiresStreaming = provider === "codex" || provider === "commandcode";
+  // OpenAI-compatible requests default to non-streaming unless the client opts in.
+  // Codex/CommandCode still require upstream streaming and are converted back to JSON below when needed.
+  let stream = providerRequiresStreaming ? true : clientRequestedStreaming;
 
   // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
   // Non-interactive mode (-p flag) sends without stream and can't parse SSE.

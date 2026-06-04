@@ -29,13 +29,20 @@ function processSSEMessage(msg, state) {
     state.items.set(parsed.output_index ?? 0, parsed.item);
   } else if (eventType === "response.completed") {
     state.status = "completed";
+    state.terminalSeen = true;
     if (parsed.response?.usage) {
       state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
       state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
       state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
     }
-  } else if (eventType === "response.failed") {
+  } else if (eventType === "response.failed" || eventType === "error") {
     state.status = "failed";
+    state.terminalSeen = true;
+    state.error = parsed.response?.error || parsed.error || {
+      type: "stream_error",
+      code: "stream_failed",
+      message: "Responses stream failed"
+    };
   }
 }
 
@@ -59,6 +66,8 @@ export async function convertResponsesStreamToJson(stream) {
     responseId: "",
     created: Math.floor(Date.now() / 1000),
     status: "in_progress",
+    terminalSeen: false,
+    error: null,
     usage: { ...EMPTY_RESPONSE },
     items: new Map()
   };
@@ -85,6 +94,15 @@ export async function convertResponsesStreamToJson(stream) {
     reader.releaseLock();
   }
 
+  if (!state.terminalSeen) {
+    state.status = "failed";
+    state.error = {
+      type: "stream_error",
+      code: "stream_disconnected",
+      message: "stream closed before response.completed"
+    };
+  }
+
   // Build output array from accumulated items (ordered by index)
   const output = [];
   const maxIndex = state.items.size > 0 ? Math.max(...state.items.keys()) : -1;
@@ -97,6 +115,7 @@ export async function convertResponsesStreamToJson(stream) {
     object: "response",
     created_at: state.created,
     status: state.status || "completed",
+    error: state.error,
     output,
     usage: state.usage
   };
