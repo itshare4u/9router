@@ -58,6 +58,7 @@ try { ensureTrayRuntime({ silent: true }); } catch {}
 // Configuration constants
 const PACKAGE_NAME = pkg.name;
 const APP_NAME = Object.keys(pkg.bin || {})[0] || "9router";
+const PACKAGE_REGISTRY_URL = ((pkg.publishConfig && pkg.publishConfig.registry) || "https://registry.npmjs.org/").replace(/\/+$/, "");
 const REGISTRY_PACKAGE_NAME = encodeURIComponent(PACKAGE_NAME);
 const INSTALL_CMD_LATEST = `npm i -g ${PACKAGE_NAME}@latest --prefer-online`;
 
@@ -430,7 +431,7 @@ function checkForUpdate() {
       resolve(version);
     };
 
-    const req = https.get(`https://registry.npmjs.org/${REGISTRY_PACKAGE_NAME}/latest`, { timeout: 3000 }, (res) => {
+    const req = https.get(`${PACKAGE_REGISTRY_URL}/${REGISTRY_PACKAGE_NAME}/latest`, { timeout: 3000 }, (res) => {
       let data = "";
       res.on("data", chunk => data += chunk);
       res.on("end", () => {

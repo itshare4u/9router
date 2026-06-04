@@ -12,11 +12,10 @@
     "directory": "cli"
   },
   "bin": {
-    "9router": "./cli.js"
+    "9router": "cli.js"
   },
   "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://npm.pkg.github.com"
   },
   "files": [
     "cli.js",
@@ -30,8 +29,8 @@
     "dev": "nodemon -I --watch cli.js --watch src --watch hooks --ext js,json cli.js",
     "build": "node scripts/build-cli.js",
     "pack:cli": "npm run build && npm pack --pack-destination ../..",
-    "publish:dry-run": "npm publish --dry-run --access public",
-    "publish:cli": "npm publish --access public",
+    "publish:dry-run": "npm publish --dry-run",
+    "publish:cli": "npm publish",
     "postinstall": "node hooks/postinstall.js",
     "prepublishOnly": "npm run build"
   },
