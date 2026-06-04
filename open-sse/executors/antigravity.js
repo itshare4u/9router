@@ -6,6 +6,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/helpers/geminiHelper.js";
+import { getProjectIdForConnection, invalidateProjectId } from "../services/projectId.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -127,11 +128,21 @@ export class AntigravityExecutor extends BaseExecutor {
       const tokens = await response.json();
       log?.info?.("TOKEN", "Antigravity refreshed");
 
+      let projectId = credentials.projectId;
+      if (credentials.connectionId && tokens.access_token) {
+        try {
+          invalidateProjectId(credentials.connectionId);
+          projectId = await getProjectIdForConnection(credentials.connectionId, tokens.access_token) || projectId;
+        } catch (error) {
+          log?.warn?.("TOKEN", `Antigravity projectId refresh failed: ${error.message}`);
+        }
+      }
+
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || credentials.refreshToken,
         expiresIn: tokens.expires_in,
-        projectId: credentials.projectId
+        projectId
       };
     } catch (error) {
       log?.error?.("TOKEN", `Antigravity refresh error: ${error.message}`);

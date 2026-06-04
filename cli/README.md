@@ -6,7 +6,6 @@
 
 [![GitHub Package](https://img.shields.io/badge/GitHub%20Packages-%40itshare4u%2F9router-blue?logo=github)](https://github.com/itshare4u/9router/pkgs/npm/9router)
 [![Version](https://img.shields.io/github/package-json/v/itshare4u/9router?filename=cli%2Fpackage.json&label=version)](https://github.com/itshare4u/9router/pkgs/npm/9router)
-[![GHCR](https://img.shields.io/badge/GHCR-itshare4u%2F9router-blue?logo=github)](https://github.com/itshare4u/9router/pkgs/container/9router)
 [![License](https://img.shields.io/github/license/itshare4u/9router.svg)](https://github.com/itshare4u/9router/blob/master/LICENSE)
 
 <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
@@ -56,10 +55,10 @@ npx @itshare4u/9router
 ```bash
 docker run -d --name 9router -p 20128:20128 \
   -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data \
-  ghcr.io/itshare4u/9router:latest
+  decolua/9router:latest
 ```
 
-Published image: [GHCR](https://github.com/itshare4u/9router/pkgs/container/9router) (multi-platform amd64/arm64).
+Published images: [Docker Hub](https://hub.docker.com/r/decolua/9router) • [GHCR](https://github.com/decolua/9router/pkgs/container/9router) (multi-platform amd64/arm64).
 
 🎉 Dashboard opens at `http://localhost:20128`
 

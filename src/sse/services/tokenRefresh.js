@@ -110,36 +110,39 @@ function needsProjectId(provider) {
 }
 
 /**
- * Non-blocking: fetch the project ID for a connection after a token refresh and
- * persist it to localDb.  Invalidates the stale cached value first so the fetch
- * always retrieves a fresh one.
+ * Fetch the project ID for a connection after a token refresh and persist it to
+ * localDb. Invalidates the stale cached value first so the fetch always
+ * retrieves a fresh one.
  *
  * @param {string} provider
  * @param {string} connectionId
  * @param {string} accessToken
  */
-function _refreshProjectId(provider, connectionId, accessToken) {
-  if (!needsProjectId(provider) || !connectionId || !accessToken) return;
+async function refreshProjectId(provider, connectionId, accessToken) {
+  if (!needsProjectId(provider) || !connectionId || !accessToken) return null;
 
   // Evict the stale cached entry so getProjectIdForConnection does a real fetch
   invalidateProjectId(connectionId);
 
-  getProjectIdForConnection(connectionId, accessToken)
-    .then((projectId) => {
-      if (!projectId) return;
-      updateProviderCredentials(connectionId, { projectId }).catch((err) => {
-        log.debug("TOKEN_REFRESH", "Failed to persist refreshed projectId", {
-          connectionId,
-          error: err?.message ?? err,
-        });
-      });
-    })
-    .catch((err) => {
-      log.debug("TOKEN_REFRESH", "Failed to fetch projectId after token refresh", {
+  try {
+    const projectId = await getProjectIdForConnection(connectionId, accessToken);
+    if (!projectId) return null;
+
+    updateProviderCredentials(connectionId, { projectId }).catch((err) => {
+      log.debug("TOKEN_REFRESH", "Failed to persist refreshed projectId", {
         connectionId,
         error: err?.message ?? err,
       });
     });
+
+    return projectId;
+  } catch (err) {
+    log.debug("TOKEN_REFRESH", "Failed to fetch projectId after token refresh", {
+      connectionId,
+      error: err?.message ?? err,
+    });
+    return null;
+  }
 }
 
 // ─── Local-specific: persist credentials to localDb ──────────────────────────
@@ -240,8 +243,8 @@ export async function checkAndRefreshToken(provider, credentials) {
             : normalizeExpiresAt(newCreds.expiresAt) || creds.expiresAt,
         };
 
-        // Non-blocking: refresh projectId with the new access token
-        _refreshProjectId(provider, creds.connectionId, creds.accessToken);
+        const refreshedProjectId = await refreshProjectId(provider, creds.connectionId, creds.accessToken);
+        if (refreshedProjectId) creds.projectId = refreshedProjectId;
       }
     }
   }

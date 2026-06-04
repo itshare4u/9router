@@ -9,7 +9,6 @@
   
   [![GitHub Package](https://img.shields.io/badge/GitHub%20Packages-%40itshare4u%2F9router-blue?logo=github)](https://github.com/itshare4u/9router/pkgs/npm/9router)
   [![Version](https://img.shields.io/github/package-json/v/itshare4u/9router?filename=cli%2Fpackage.json&label=version)](https://github.com/itshare4u/9router/pkgs/npm/9router)
-  [![GHCR](https://img.shields.io/badge/GHCR-itshare4u%2F9router-blue?logo=github)](https://github.com/itshare4u/9router/pkgs/container/9router)
   [![License](https://img.shields.io/github/license/itshare4u/9router.svg)](https://github.com/itshare4u/9router/blob/master/LICENSE)
 
   <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
@@ -1055,7 +1054,8 @@ pm2 startup
 ### Docker
 
 Published images (multi-platform `linux/amd64` + `linux/arm64`):
-- GHCR: [`ghcr.io/itshare4u/9router`](https://github.com/itshare4u/9router/pkgs/container/9router)
+- Docker Hub: [`decolua/9router`](https://hub.docker.com/r/decolua/9router)
+- GHCR: [`ghcr.io/decolua/9router`](https://github.com/decolua/9router/pkgs/container/9router)
 
 **Quick start (use published image):**
 
@@ -1065,7 +1065,7 @@ docker run -d \
   -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  ghcr.io/itshare4u/9router:latest
+  decolua/9router:latest
 ```
 
 → Open http://localhost:20128
@@ -1090,7 +1090,7 @@ docker run -d --name 9router -p 20128:20128 \
 docker logs -f 9router
 docker restart 9router
 docker stop 9router && docker rm 9router
-docker pull ghcr.io/itshare4u/9router:latest   # update to latest
+docker pull decolua/9router:latest   # update to latest
 ```
 
 **Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.

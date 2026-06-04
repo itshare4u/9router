@@ -18,31 +18,6 @@ GitHub Packages for npm uses this registry:
 https://npm.pkg.github.com
 ```
 
-Note: `ghcr.io` is for Docker/container images. npm packages on GitHub Packages use `npm.pkg.github.com`.
-
-## Client install from GHCR
-
-For the Docker image, the workflow `.github/workflows/docker-publish.yml` pushes:
-
-```text
-ghcr.io/itshare4u/9router:latest
-```
-
-If the package visibility is public, client machines can pull it without logging in:
-
-```bash
-docker pull ghcr.io/itshare4u/9router:latest
-docker run -d --name 9router -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data \
-  ghcr.io/itshare4u/9router:latest
-```
-
-After the first publish, make the container package public if GitHub did not do it automatically:
-
-```text
-GitHub -> Profile -> Packages -> 9router -> Package settings -> Change visibility -> Public
-```
-
 ## Client install from GitHub npm package
 
 GitHub Packages generally requires authentication even for public npm packages. Create a GitHub personal access token classic with `read:packages`, then run this on the client machine:
@@ -64,7 +39,7 @@ The same setup can be written directly to `~/.npmrc`:
 
 ## Publish from GitHub Actions
 
-The workflow `.github/workflows/npm-publish.yml` publishes on every push to `main`.
+The workflow `.github/workflows/npm-publish.yml` publishes on every push to `master` or `main`.
 
 It uses the repository `GITHUB_TOKEN`, so you do not need an npmjs token. The workflow permissions include:
 
