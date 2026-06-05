@@ -30,6 +30,13 @@ function resolveGeminiMaxOutputTokens(body) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_GEMINI_MAX_OUTPUT_TOKENS;
 }
 
+function ensureCloudCodeOutputBudget(geminiRequest) {
+  const current = Number(geminiRequest.generationConfig?.maxOutputTokens);
+  if (!Number.isFinite(current) || current < DEFAULT_GEMINI_MAX_OUTPUT_TOKENS) {
+    geminiRequest.generationConfig.maxOutputTokens = DEFAULT_GEMINI_MAX_OUTPUT_TOKENS;
+  }
+}
+
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
 // Replace any invalid character with '_' and truncate to 64.
@@ -237,6 +244,7 @@ export function openaiToGeminiRequest(model, body, stream) {
 export function openaiToGeminiCLIRequest(model, body, stream) {
   const gemini = openaiToGeminiBase(model, body, stream, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE);
   const isClaude = model.toLowerCase().includes("claude");
+  ensureCloudCodeOutputBudget(gemini);
 
   // Add thinking config for CLI
   if (body.reasoning_effort) {

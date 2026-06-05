@@ -58,13 +58,16 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     };
 
     if (usage) {
+      const promptTokens = usage.promptTokenCount || 0;
+      const reasoningTokens = usage.thoughtsTokenCount || 0;
+      const completionTokens = (usage.candidatesTokenCount || 0) + reasoningTokens;
       result.usage = {
-        prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
-        completion_tokens: usage.candidatesTokenCount || 0,
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
         total_tokens: usage.totalTokenCount || 0
       };
-      if (usage.thoughtsTokenCount > 0) {
-        result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
+      if (reasoningTokens > 0) {
+        result.usage.completion_tokens_details = { reasoning_tokens: reasoningTokens };
       }
     }
     return result;

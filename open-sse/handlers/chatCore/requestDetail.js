@@ -46,12 +46,15 @@ export function extractUsageFromResponse(responseBody) {
   // Gemini format. Antigravity wraps this under response.usageMetadata.
   const usageMetadata = responseBody.usageMetadata || responseBody.response?.usageMetadata;
   if (usageMetadata) {
+    const promptTokens = usageMetadata.promptTokenCount || 0;
+    const reasoningTokens = usageMetadata.thoughtsTokenCount || 0;
+    const completionTokens = (usageMetadata.candidatesTokenCount || 0) + reasoningTokens;
     return {
-      prompt_tokens: usageMetadata.promptTokenCount || 0,
-      completion_tokens: usageMetadata.candidatesTokenCount || 0,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
       total_tokens: usageMetadata.totalTokenCount,
       cached_tokens: usageMetadata.cachedContentTokenCount,
-      reasoning_tokens: usageMetadata.thoughtsTokenCount
+      reasoning_tokens: reasoningTokens
     };
   }
 

@@ -26,19 +26,19 @@ describe("Antigravity non-stream normalization", () => {
     expect(result.request.generationConfig.maxOutputTokens).toBe(16384);
   });
 
-  it("maps max_completion_tokens to Gemini maxOutputTokens", () => {
+  it("raises low client token caps for Antigravity thinking output", () => {
     const result = openaiToAntigravityRequest(
       "gemini-3.5-flash-low",
       {
         messages: [{ role: "user", content: "translate this" }],
         stream: false,
-        max_completion_tokens: 2048,
+        max_tokens: 500,
       },
       false,
       { projectId: "project-123", connectionId: "conn-123" },
     );
 
-    expect(result.request.generationConfig.maxOutputTokens).toBe(2048);
+    expect(result.request.generationConfig.maxOutputTokens).toBe(16384);
   });
 
   it("reads wrapped Gemini usage metadata from Antigravity JSON responses", () => {
@@ -47,7 +47,7 @@ describe("Antigravity non-stream normalization", () => {
         usageMetadata: {
           promptTokenCount: 11,
           candidatesTokenCount: 22,
-          totalTokenCount: 33,
+          totalTokenCount: 38,
           cachedContentTokenCount: 4,
           thoughtsTokenCount: 5,
         },
@@ -56,8 +56,8 @@ describe("Antigravity non-stream normalization", () => {
 
     expect(usage).toEqual({
       prompt_tokens: 11,
-      completion_tokens: 22,
-      total_tokens: 33,
+      completion_tokens: 27,
+      total_tokens: 38,
       cached_tokens: 4,
       reasoning_tokens: 5,
     });
@@ -77,7 +77,8 @@ describe("Antigravity non-stream normalization", () => {
         usageMetadata: {
           promptTokenCount: 11,
           candidatesTokenCount: 22,
-          totalTokenCount: 33,
+          totalTokenCount: 38,
+          thoughtsTokenCount: 5,
         },
       },
     }, FORMATS.ANTIGRAVITY, FORMATS.OPENAI);
@@ -86,8 +87,9 @@ describe("Antigravity non-stream normalization", () => {
     expect(translated.choices[0].finish_reason).toBe("stop");
     expect(translated.usage).toEqual({
       prompt_tokens: 11,
-      completion_tokens: 22,
-      total_tokens: 33,
+      completion_tokens: 27,
+      total_tokens: 38,
+      completion_tokens_details: { reasoning_tokens: 5 },
     });
   });
 });
