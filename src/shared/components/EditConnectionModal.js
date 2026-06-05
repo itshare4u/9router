@@ -21,6 +21,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [googleProjectData, setGoogleProjectData] = useState({ projectId: "" });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -46,6 +47,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "antigravity" || connection.provider === "gemini-cli") {
+        setGoogleProjectData({ projectId: connection.projectId || "" });
+      }
       setTestResult(null);
       setValidationResult(null);
     }
@@ -54,6 +58,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const usesGoogleProject = connection?.provider === "antigravity" || connection?.provider === "gemini-cli";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -150,6 +155,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
       }
+      if (usesGoogleProject) {
+        updates.projectId = googleProjectData.projectId.trim();
+      }
       
       await onSave(updates);
     } finally {
@@ -173,6 +181,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             <p className="text-sm text-text-muted mb-1">Email</p>
             <p className="font-medium">{connection.email}</p>
           </div>
+        )}
+        {usesGoogleProject && (
+          <Input
+            label="Project ID"
+            value={googleProjectData.projectId}
+            onChange={(e) => setGoogleProjectData({ projectId: e.target.value })}
+            placeholder="my-google-cloud-project"
+            hint="Required when Google does not return a Code Assist companion project automatically."
+          />
         )}
         <Input
           label="Priority"
@@ -274,6 +291,7 @@ EditConnectionModal.propTypes = {
     priority: PropTypes.number,
     authType: PropTypes.string,
     provider: PropTypes.string,
+    projectId: PropTypes.string,
     providerSpecificData: PropTypes.object,
   }),
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
@@ -283,4 +301,3 @@ EditConnectionModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-

@@ -117,6 +117,58 @@ export function extractCodexAccountInfo(idToken) {
   };
 }
 
+function normalizeCodeAssistProjectId(value) {
+  if (typeof value === "string") {
+    const id = value.trim();
+    return id || "";
+  }
+  if (!value || typeof value !== "object") return "";
+  return normalizeCodeAssistProjectId(value.id || value.projectId || value.project_id || value.project);
+}
+
+function extractCodeAssistProjectId(data) {
+  return normalizeCodeAssistProjectId(data?.cloudaicompanionProject)
+    || normalizeCodeAssistProjectId(data?.cloudAiCompanionProject)
+    || normalizeCodeAssistProjectId(data?.projectId)
+    || normalizeCodeAssistProjectId(data?.project_id)
+    || "";
+}
+
+function extractCodeAssistTierId(data) {
+  if (Array.isArray(data?.allowedTiers)) {
+    const defaultTier = data.allowedTiers.find((tier) => tier?.isDefault && tier?.id);
+    if (defaultTier?.id) return String(defaultTier.id).trim();
+  }
+  return "legacy-tier";
+}
+
+function formatAntigravityProjectIdError(data) {
+  const validation = Array.isArray(data?.ineligibleTiers)
+    ? data.ineligibleTiers.find((tier) => tier?.reasonCode === "VALIDATION_REQUIRED")
+    : null;
+  if (validation) {
+    return [
+      validation.validationErrorMessage || "Google account verification is required.",
+      "Verify the Google account, then reconnect Antigravity. For standard-tier accounts, create/select a Google Cloud project and set its Project ID on the connection.",
+    ].join(" ");
+  }
+
+  const standardTier = Array.isArray(data?.allowedTiers)
+    ? data.allowedTiers.find((tier) => tier?.userDefinedCloudaicompanionProject)
+    : null;
+  if (standardTier) {
+    return "This Antigravity account requires a user-defined Google Cloud project. Create/select a Google Cloud project and set its Project ID on the connection.";
+  }
+
+  return "Antigravity did not return a Google Cloud Code Assist project ID. Reconnect after the account is eligible, or set a Google Cloud Project ID manually.";
+}
+
+function makeOAuthInputError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
 // Provider configurations
 const PROVIDERS = {
   claude: {
@@ -453,27 +505,20 @@ const PROVIDERS = {
       // Load Code Assist to get project ID and tier
       let projectId = "";
       let tierId = "legacy-tier";
-      try {
-        const loadRes = await fetch(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint, {
-          method: "POST",
-          headers: loadHeaders,
-          body: JSON.stringify({ metadata }),
-        });
-        if (loadRes.ok) {
-          const data = await loadRes.json();
-          projectId = data.cloudaicompanionProject?.id || data.cloudaicompanionProject || "";
-          if (Array.isArray(data.allowedTiers)) {
-            for (const tier of data.allowedTiers) {
-              if (tier.isDefault && tier.id) {
-                tierId = tier.id.trim();
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.log("Failed to load code assist:", e);
+      const loadRes = await fetch(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint, {
+        method: "POST",
+        headers: loadHeaders,
+        body: JSON.stringify({ metadata }),
+      });
+      if (!loadRes.ok) {
+        const errorText = await loadRes.text().catch(() => "");
+        throw makeOAuthInputError(`Failed to load Antigravity Code Assist: HTTP ${loadRes.status} ${errorText.slice(0, 200)}`);
       }
+
+      const codeAssistData = await loadRes.json();
+      projectId = extractCodeAssistProjectId(codeAssistData);
+      tierId = extractCodeAssistTierId(codeAssistData);
+      const projectError = projectId ? "" : formatAntigravityProjectIdError(codeAssistData);
 
       // Fire-and-forget onboarding — does not block DB save
       if (projectId) {
@@ -498,7 +543,7 @@ const PROVIDERS = {
         doOnboard().catch(() => {});
       }
 
-      return { userInfo, projectId };
+      return { userInfo, projectId, projectError };
     },
     mapTokens: (tokens, extra) => ({
       accessToken: tokens.access_token,
@@ -507,6 +552,12 @@ const PROVIDERS = {
       scope: tokens.scope,
       email: extra?.userInfo?.email,
       projectId: extra?.projectId,
+      ...(extra?.projectError ? {
+        testStatus: "error",
+        lastError: extra.projectError,
+        lastErrorAt: new Date().toISOString(),
+        errorCode: 403,
+      } : {}),
     }),
   },
 

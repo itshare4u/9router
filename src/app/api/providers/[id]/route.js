@@ -98,6 +98,7 @@ export async function PUT(request, { params }) {
       testStatus,
       lastError,
       lastErrorAt,
+      projectId,
       providerSpecificData
     } = body;
 
@@ -126,6 +127,10 @@ export async function PUT(request, { params }) {
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
+    if (projectId !== undefined) {
+      const normalizedProjectId = typeof projectId === "string" ? projectId.trim() : "";
+      updateData.projectId = normalizedProjectId || null;
+    }
 
     if (
       shouldMergeProviderSpecificData(

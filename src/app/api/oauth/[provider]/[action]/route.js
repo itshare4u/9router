@@ -249,7 +249,7 @@ export async function POST(request, { params }) {
         expiresAt: tokenData.expiresIn 
           ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() 
           : null,
-        testStatus: "active",
+        testStatus: tokenData.testStatus || "active",
       });
 
       return NextResponse.json({ 
@@ -303,7 +303,7 @@ export async function POST(request, { params }) {
           expiresAt: result.tokens.expiresIn 
             ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
             : null,
-          testStatus: "active",
+          testStatus: result.tokens.testStatus || "active",
         });
 
         return NextResponse.json({ 
@@ -338,6 +338,6 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
     console.log("OAuth POST error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: Number(error.status) || 500 });
   }
 }

@@ -194,6 +194,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         refreshedCredentials.projectId = pid;
         // Persist to DB in background so subsequent requests have it immediately
         updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+      } else {
+        const message = `${provider} account is missing a Google Cloud Code Assist project ID`;
+        lastError = message;
+        lastStatus = HTTP_STATUS.FORBIDDEN;
+        excludeConnectionIds.add(credentials.connectionId);
+        await markAccountUnavailable(credentials.connectionId, HTTP_STATUS.FORBIDDEN, message, provider, model);
+        continue;
       }
     }
 

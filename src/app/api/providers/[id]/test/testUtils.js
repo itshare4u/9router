@@ -91,6 +91,69 @@ const OAUTH_TEST_CONFIG = {
   codebuddy: { tokenExists: true },
 };
 
+function normalizeCodeAssistProjectId(value) {
+  if (typeof value === "string") {
+    const id = value.trim();
+    return id || "";
+  }
+  if (!value || typeof value !== "object") return "";
+  return normalizeCodeAssistProjectId(value.id || value.projectId || value.project_id || value.project);
+}
+
+function extractCodeAssistProjectId(data) {
+  return normalizeCodeAssistProjectId(data?.cloudaicompanionProject)
+    || normalizeCodeAssistProjectId(data?.cloudAiCompanionProject)
+    || normalizeCodeAssistProjectId(data?.projectId)
+    || normalizeCodeAssistProjectId(data?.project_id)
+    || "";
+}
+
+function formatAntigravityProjectIdError(data) {
+  const validation = Array.isArray(data?.ineligibleTiers)
+    ? data.ineligibleTiers.find((tier) => tier?.reasonCode === "VALIDATION_REQUIRED")
+    : null;
+  if (validation) {
+    return validation.validationErrorMessage || "Verify the Google account to continue";
+  }
+
+  const standardTier = Array.isArray(data?.allowedTiers)
+    ? data.allowedTiers.find((tier) => tier?.userDefinedCloudaicompanionProject)
+    : null;
+  if (standardTier) {
+    return "Missing Google Cloud Project ID for this Antigravity account";
+  }
+
+  return "Antigravity did not return a Code Assist project ID";
+}
+
+async function checkAntigravityProject(connection, accessToken, effectiveProxy) {
+  const res = await fetchWithConnectionProxy(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
+      "X-Goog-Api-Client": ANTIGRAVITY_CONFIG.loadCodeAssistApiClient,
+      "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
+      "x-request-source": "local",
+    },
+    body: JSON.stringify({ metadata: getOAuthClientMetadata() }),
+  }, effectiveProxy);
+
+  if (!res.ok) {
+    return { valid: false, error: `Code Assist returned ${res.status}` };
+  }
+
+  const data = await res.json();
+  const loadedProjectId = extractCodeAssistProjectId(data);
+  const projectId = connection.projectId || loadedProjectId;
+  if (!projectId) {
+    return { valid: false, error: formatAntigravityProjectIdError(data) };
+  }
+
+  return { valid: true, error: null, projectId: loadedProjectId || null };
+}
+
 async function probeClineAccessToken(accessToken) {
   const res = await fetch("https://api.cline.bot/api/v1/users/me", {
     method: "GET",
@@ -288,6 +351,17 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     newTokens = tokens;
     accessToken = tokens.accessToken;
     return await tryProbe(accessToken);
+  }
+
+  if (connection.provider === "antigravity") {
+    const projectCheck = await checkAntigravityProject(connection, accessToken, effectiveProxy);
+    return {
+      valid: projectCheck.valid,
+      error: projectCheck.error,
+      refreshed,
+      newTokens,
+      projectId: projectCheck.projectId,
+    };
   }
 
   try {
@@ -679,6 +753,7 @@ export async function testSingleConnection(id) {
       updateData.expiresAt = new Date(Date.now() + result.newTokens.expiresIn * 1000).toISOString();
     }
   }
+  if (result.projectId) updateData.projectId = result.projectId;
 
   await updateProviderConnection(id, updateData);
 

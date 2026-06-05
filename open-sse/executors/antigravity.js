@@ -42,7 +42,10 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    const projectId = credentials?.projectId || this.generateProjectId();
+    const projectId = credentials?.projectId || body?.project;
+    if (!projectId) {
+      throw new Error("Antigravity requires a Google Cloud Code Assist project ID");
+    }
 
     // Fix contents for Claude models via Antigravity
     const contents = body.request?.contents?.map(c => {
@@ -137,12 +140,6 @@ export class AntigravityExecutor extends BaseExecutor {
       log?.error?.("TOKEN", `Antigravity refresh error: ${error.message}`);
       return null;
     }
-  }
-
-  generateProjectId() {
-    const adj = ["useful", "bright", "swift", "calm", "bold"][Math.floor(Math.random() * 5)];
-    const noun = ["fuze", "wave", "spark", "flow", "core"][Math.floor(Math.random() * 5)];
-    return `${adj}-${noun}-${crypto.randomUUID().slice(0, 5)}`;
   }
 
   generateSessionId() {
