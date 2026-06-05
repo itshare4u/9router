@@ -46,9 +46,8 @@ export default function Sidebar({ onClose }) {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [pollUpdater, setPollUpdater] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState(null);
   const [updateError, setUpdateError] = useState("");
+  const [updateSecondsRemaining, setUpdateSecondsRemaining] = useState(UPDATER_CONFIG.estimatedRestartSec);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
@@ -79,65 +78,45 @@ export default function Sidebar({ onClose }) {
   const handleUpdate = async () => {
     setShowUpdateModal(false);
     setIsUpdating(true);
-    setPollUpdater(false);
     setIsDisconnected(false);
     setUpdateError("");
-    setUpdateStatus({ phase: "starting", packageName: updateInfo?.packageName, logTail: [] });
+    setUpdateSecondsRemaining(UPDATER_CONFIG.estimatedRestartSec);
 
     try {
       const res = await fetch("/api/version/update", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.success === false) {
         const message = data.message || "Failed to start updater";
-        setUpdateStatus({ phase: "error", done: true, success: false, error: message, logTail: [message] });
+        setUpdateError(message);
+        setUpdateSecondsRemaining(0);
         return;
       }
-      setPollUpdater(true);
     } catch (error) {
-      setUpdateError(error.message || "Waiting for updater status...");
-      setPollUpdater(true);
+      // The current server may exit before the response reaches the browser.
+      // Treat network interruption as part of the restart flow.
+      if (error?.name !== "TypeError") {
+        setUpdateError(error.message || "Failed to start updater");
+        setUpdateSecondsRemaining(0);
+      }
     }
   };
 
   useEffect(() => {
-    if (!isUpdating || !pollUpdater) return undefined;
+    if (!isUpdating || updateError) return undefined;
 
-    let cancelled = false;
-    let failedPolls = 0;
-    let reloadTimer = null;
-    const statusUrl = `http://127.0.0.1:${UPDATER_CONFIG.statusPort}/update/status`;
-
-    const poll = async () => {
-      try {
-        const res = await fetch(statusUrl, { cache: "no-store" });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        failedPolls = 0;
-        setUpdateStatus(data);
-        setUpdateError("");
-        if (data.done && data.success && !reloadTimer) {
-          reloadTimer = setTimeout(() => {
-            globalThis.location.reload();
-          }, 5000);
+    const timer = setInterval(() => {
+      setUpdateSecondsRemaining((current) => {
+        if (current <= 1) {
+          clearInterval(timer);
+          globalThis.location.reload();
+          return 0;
         }
-      } catch {
-        if (cancelled) return;
-        failedPolls += 1;
-        if (failedPolls > 8) {
-          setUpdateError("Updater status is not reachable yet. It may still be starting.");
-        }
-      }
-    };
+        return current - 1;
+      });
+    }, 1000);
 
-    poll();
-    const timer = setInterval(poll, UPDATER_CONFIG.statusPollIntervalMs);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-      if (reloadTimer) clearTimeout(reloadTimer);
-    };
-  }, [isUpdating, pollUpdater]);
+    return () => clearInterval(timer);
+  }, [isUpdating, updateError]);
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -406,8 +385,9 @@ export default function Sidebar({ onClose }) {
             <UpdateProgressPanel
               latestVersion={updateInfo?.latestVersion}
               installCmd={INSTALL_CMD}
-              status={updateStatus}
               error={updateError}
+              secondsRemaining={updateSecondsRemaining}
+              estimatedSeconds={UPDATER_CONFIG.estimatedRestartSec}
               onCopy={() => copy(INSTALL_CMD)}
               copied={copied}
             />
@@ -433,30 +413,19 @@ Sidebar.propTypes = {
   onClose: PropTypes.func,
 };
 
-function getUpdatePhaseLabel(status, error) {
-  if (status?.done && status.success) return "Update completed. Reloading dashboard shortly...";
-  if (status?.done && !status.success) return status.error || "Update failed.";
+function getUpdatePhaseLabel(secondsRemaining, error) {
   if (error) return error;
-  switch (status?.phase) {
-    case "waitingForExit":
-      return "Stopping the running server...";
-    case "installing":
-      return `Installing package${status.attempt ? ` (${status.attempt}/${status.maxRetries})` : ""}...`;
-    case "done":
-      return "Update completed.";
-    case "error":
-      return status.error || "Update failed.";
-    default:
-      return "Starting updater...";
-  }
+  if (secondsRemaining <= 0) return "Reloading dashboard...";
+  return `Installing and restarting. Page will refresh in ${secondsRemaining}s.`;
 }
 
-function UpdateProgressPanel({ latestVersion, installCmd, status, error, onCopy, copied }) {
-  const isDone = status?.done === true;
-  const isSuccess = isDone && status?.success === true;
-  const isError = (isDone && !status?.success) || !!error;
-  const icon = isSuccess ? "check_circle" : isError ? "error" : "sync";
-  const iconClass = isSuccess ? "bg-green-500/20 text-green-400" : isError ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400";
+function UpdateProgressPanel({ latestVersion, installCmd, error, secondsRemaining, estimatedSeconds, onCopy, copied }) {
+  const isError = !!error;
+  const icon = isError ? "error" : "sync";
+  const iconClass = isError ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400";
+  const progress = isError
+    ? 100
+    : Math.min(100, Math.max(5, Math.round(((estimatedSeconds - secondsRemaining) / estimatedSeconds) * 100)));
 
   return (
     <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
@@ -466,16 +435,14 @@ function UpdateProgressPanel({ latestVersion, installCmd, status, error, onCopy,
         </div>
         <div>
           <h2 className="text-lg font-semibold">Update 9Router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
-          <p className="text-xs text-white/60">{getUpdatePhaseLabel(status, error)}</p>
+          <p className="text-xs text-white/60">{getUpdatePhaseLabel(secondsRemaining, error)}</p>
         </div>
       </div>
 
-      <div className="mb-4 rounded bg-white/5 border border-white/10 p-3 min-h-[96px] max-h-44 overflow-auto">
-        {status?.logTail?.length ? (
-          <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-white/70">{status.logTail.join("\n")}</pre>
-        ) : (
-          <p className="text-xs text-white/50">Waiting for updater logs...</p>
-        )}
+      <div className="mb-4 rounded bg-white/5 border border-white/10 p-3">
+        <p className="text-sm text-white/80">
+          The app is updating in the background. Keep this page open; it will refresh automatically after the estimated restart window.
+        </p>
       </div>
 
       <div className="w-full px-3 py-2 rounded bg-white/5 mb-4">
@@ -486,15 +453,13 @@ function UpdateProgressPanel({ latestVersion, installCmd, status, error, onCopy,
         <Button variant="secondary" onClick={onCopy}>
           {copied ? "Copied" : "Copy Command"}
         </Button>
-        <Button variant="primary" fullWidth onClick={() => globalThis.location.reload()} disabled={!isDone}>
-          {isSuccess ? "Reload Dashboard" : isDone ? "Reload Page" : "Updating..."}
+        <Button variant="primary" fullWidth onClick={() => globalThis.location.reload()}>
+          {isError ? "Reload Page" : secondsRemaining > 0 ? `Reload Now (${secondsRemaining}s)` : "Reload Dashboard"}
         </Button>
       </div>
-      {!isDone && (
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-          <div className="h-full w-1/3 animate-pulse rounded-full bg-amber-400" />
-        </div>
-      )}
+      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div className={`h-full rounded-full ${isError ? "bg-red-400" : "bg-amber-400"}`} style={{ width: `${progress}%` }} />
+      </div>
     </div>
   );
 }
@@ -502,8 +467,9 @@ function UpdateProgressPanel({ latestVersion, installCmd, status, error, onCopy,
 UpdateProgressPanel.propTypes = {
   latestVersion: PropTypes.string,
   installCmd: PropTypes.string.isRequired,
-  status: PropTypes.object,
   error: PropTypes.string,
+  secondsRemaining: PropTypes.number.isRequired,
+  estimatedSeconds: PropTypes.number.isRequired,
   onCopy: PropTypes.func.isRequired,
   copied: PropTypes.bool,
 };

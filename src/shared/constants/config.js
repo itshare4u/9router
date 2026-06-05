@@ -19,6 +19,7 @@ export const UPDATER_CONFIG = {
   npmRegistryUrl: "https://npm.pkg.github.com",
   installCmd: "npm i -g @itshare4u/9router --registry=https://npm.pkg.github.com",
   installCmdLatest: "npm i -g @itshare4u/9router@latest --prefer-online --registry=https://npm.pkg.github.com",
+  estimatedRestartSec: 90,
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,
