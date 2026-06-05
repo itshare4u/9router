@@ -110,39 +110,37 @@ function needsProjectId(provider) {
 }
 
 /**
- * Fetch the project ID for a connection after a token refresh and persist it to
- * localDb. Invalidates the stale cached value first so the fetch always
- * retrieves a fresh one.
+ * Non-blocking: fetch the project ID only for connections that do not already
+ * have one. Google project IDs are stable for a connection; re-fetching on
+ * every token refresh can fail transiently and should not block requests.
  *
  * @param {string} provider
  * @param {string} connectionId
  * @param {string} accessToken
  */
-async function refreshProjectId(provider, connectionId, accessToken) {
-  if (!needsProjectId(provider) || !connectionId || !accessToken) return null;
+function refreshProjectIdIfMissing(provider, connectionId, accessToken, currentProjectId) {
+  if (!needsProjectId(provider) || !connectionId || !accessToken || currentProjectId) return;
 
   // Evict the stale cached entry so getProjectIdForConnection does a real fetch
   invalidateProjectId(connectionId);
 
-  try {
-    const projectId = await getProjectIdForConnection(connectionId, accessToken);
-    if (!projectId) return null;
+  getProjectIdForConnection(connectionId, accessToken)
+    .then((projectId) => {
+      if (!projectId) return;
 
-    updateProviderCredentials(connectionId, { projectId }).catch((err) => {
-      log.debug("TOKEN_REFRESH", "Failed to persist refreshed projectId", {
+      updateProviderCredentials(connectionId, { projectId }).catch((err) => {
+        log.debug("TOKEN_REFRESH", "Failed to persist refreshed projectId", {
+          connectionId,
+          error: err?.message ?? err,
+        });
+      });
+    })
+    .catch((err) => {
+      log.debug("TOKEN_REFRESH", "Failed to fetch projectId after token refresh", {
         connectionId,
         error: err?.message ?? err,
       });
     });
-
-    return projectId;
-  } catch (err) {
-    log.debug("TOKEN_REFRESH", "Failed to fetch projectId after token refresh", {
-      connectionId,
-      error: err?.message ?? err,
-    });
-    return null;
-  }
 }
 
 // ─── Local-specific: persist credentials to localDb ──────────────────────────
@@ -243,8 +241,7 @@ export async function checkAndRefreshToken(provider, credentials) {
             : normalizeExpiresAt(newCreds.expiresAt) || creds.expiresAt,
         };
 
-        const refreshedProjectId = await refreshProjectId(provider, creds.connectionId, creds.accessToken);
-        if (refreshedProjectId) creds.projectId = refreshedProjectId;
+        refreshProjectIdIfMissing(provider, creds.connectionId, creds.accessToken, creds.projectId);
       }
     }
   }
