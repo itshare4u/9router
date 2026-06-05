@@ -14,6 +14,7 @@ import {
   CLAUDE_CONFIG,
   CLINE_CONFIG,
   KILOCODE_CONFIG,
+  getOAuthClientMetadata,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
