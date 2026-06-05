@@ -43,12 +43,15 @@ export function extractUsageFromResponse(responseBody) {
     };
   }
 
-  // Gemini format
-  if (responseBody.usageMetadata) {
+  // Gemini format. Antigravity wraps this under response.usageMetadata.
+  const usageMetadata = responseBody.usageMetadata || responseBody.response?.usageMetadata;
+  if (usageMetadata) {
     return {
-      prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
-      completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
-      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount
+      prompt_tokens: usageMetadata.promptTokenCount || 0,
+      completion_tokens: usageMetadata.candidatesTokenCount || 0,
+      total_tokens: usageMetadata.totalTokenCount,
+      cached_tokens: usageMetadata.cachedContentTokenCount,
+      reasoning_tokens: usageMetadata.thoughtsTokenCount
     };
   }
 

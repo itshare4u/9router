@@ -20,6 +20,16 @@ import {
 } from "../helpers/geminiHelper.js";
 import { deriveSessionId } from "../../utils/sessionManager.js";
 
+const DEFAULT_GEMINI_MAX_OUTPUT_TOKENS = 16384;
+
+function resolveGeminiMaxOutputTokens(body) {
+  const value = body.max_tokens ?? body.max_completion_tokens;
+  if (value === undefined || value === null || value === "") return DEFAULT_GEMINI_MAX_OUTPUT_TOKENS;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_GEMINI_MAX_OUTPUT_TOKENS;
+}
+
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
 // Replace any invalid character with '_' and truncate to 64.
@@ -54,9 +64,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   if (body.top_k !== undefined) {
     result.generationConfig.topK = body.top_k;
   }
-  if (body.max_tokens !== undefined) {
-    result.generationConfig.maxOutputTokens = body.max_tokens;
-  }
+  result.generationConfig.maxOutputTokens = resolveGeminiMaxOutputTokens(body);
 
   // Build tool_call_id -> name map
   const tcID2Name = {};
@@ -467,4 +475,3 @@ export function openaiToAntigravityRequest(model, body, stream, credentials = nu
 register(FORMATS.OPENAI, FORMATS.GEMINI, openaiToGeminiRequest, null);
 register(FORMATS.OPENAI, FORMATS.GEMINI_CLI, (model, body, stream, credentials) => wrapInCloudCodeEnvelope(model, openaiToGeminiCLIRequest(model, body, stream), credentials), null);
 register(FORMATS.OPENAI, FORMATS.ANTIGRAVITY, openaiToAntigravityRequest, null);
-
