@@ -17,20 +17,9 @@ export const GITHUB_CONFIG = {
 export const UPDATER_CONFIG = {
   npmPackageName: "@itshare4u/9router",
   npmRegistryUrl: "https://npm.pkg.github.com",
-  installCmd: "npm i -g @itshare4u/9router --registry=https://npm.pkg.github.com",
-  installCmdLatest: "npm i -g @itshare4u/9router@latest --prefer-online --registry=https://npm.pkg.github.com",
-  estimatedRestartSec: 90,
+  installCmd: "sudo npm i -g @itshare4u/9router --registry=https://npm.pkg.github.com --userconfig=$HOME/.npmrc",
+  installCmdLatest: "sudo npm i -g @itshare4u/9router@latest --prefer-online --registry=https://npm.pkg.github.com --userconfig=$HOME/.npmrc",
   shutdownCountdownSec: 3,
-  exitDelayMs: 500,
-  statusPort: 20129,
-  statusPollIntervalMs: 1000,
-  statusLogTailLines: 8,
-  installRetries: 3,
-  installRetryDelayMs: 5000,
-  lingerAfterDoneMs: 30000,
-  waitForExitMinMs: 5000,
-  waitForExitMaxMs: 20000,
-  waitForExitCheckMs: 500,
   appPort: 20128,
 };
 

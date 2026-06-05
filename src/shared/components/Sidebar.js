@@ -46,8 +46,7 @@ export default function Sidebar({ onClose }) {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [updateError, setUpdateError] = useState("");
-  const [updateSecondsRemaining, setUpdateSecondsRemaining] = useState(UPDATER_CONFIG.estimatedRestartSec);
+  const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
@@ -75,48 +74,31 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     setShowUpdateModal(false);
     setIsUpdating(true);
-    setIsDisconnected(false);
-    setUpdateError("");
-    setUpdateSecondsRemaining(UPDATER_CONFIG.estimatedRestartSec);
-
-    try {
-      const res = await fetch("/api/version/update", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.success === false) {
-        const message = data.message || "Failed to start updater";
-        setUpdateError(message);
-        setUpdateSecondsRemaining(0);
-        return;
-      }
-    } catch (error) {
-      // The current server may exit before the response reaches the browser.
-      // Treat network interruption as part of the restart flow.
-      if (error?.name !== "TypeError") {
-        setUpdateError(error.message || "Failed to start updater");
-        setUpdateSecondsRemaining(0);
-      }
-    }
   };
 
-  useEffect(() => {
-    if (!isUpdating || updateError) return undefined;
-
+  const handleCopyAndShutdown = async () => {
+    try { await navigator.clipboard.writeText(INSTALL_CMD); } catch { /* clipboard blocked */ }
+    copy(INSTALL_CMD);
+    let remaining = UPDATER_CONFIG.shutdownCountdownSec;
+    setShutdownCountdown(remaining);
     const timer = setInterval(() => {
-      setUpdateSecondsRemaining((current) => {
-        if (current <= 1) {
-          clearInterval(timer);
-          globalThis.location.reload();
-          return 0;
-        }
-        return current - 1;
-      });
+      remaining -= 1;
+      setShutdownCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        fetch("/api/version/shutdown", { method: "POST" }).catch(() => {});
+        setIsDisconnected(true);
+      }
     }, 1000);
+  };
 
-    return () => clearInterval(timer);
-  }, [isUpdating, updateError]);
+  const handleCancelUpdate = () => {
+    setIsUpdating(false);
+    setShutdownCountdown(0);
+  };
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -372,8 +354,8 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title="Update 9Router"
-        message={`Start automatic update to v${updateInfo?.latestVersion || ""}? The server will restart during installation.`}
-        confirmText="Start Update"
+        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it, stop the server, and run it manually with sudo if needed.`}
+        confirmText="Show Command"
         cancelText="Cancel"
         variant="primary"
       />
@@ -382,14 +364,14 @@ export default function Sidebar({ onClose }) {
       {(isDisconnected || isUpdating) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
           {isUpdating ? (
-            <UpdateProgressPanel
+            <ManualUpdatePanel
               latestVersion={updateInfo?.latestVersion}
               installCmd={INSTALL_CMD}
-              error={updateError}
-              secondsRemaining={updateSecondsRemaining}
-              estimatedSeconds={UPDATER_CONFIG.estimatedRestartSec}
-              onCopy={() => copy(INSTALL_CMD)}
               copied={copied}
+              onCopyAndShutdown={handleCopyAndShutdown}
+              onCancel={handleCancelUpdate}
+              countdown={shutdownCountdown}
+              isDisconnected={isDisconnected}
             />
           ) : (
             <div className="text-center p-8">
@@ -413,63 +395,61 @@ Sidebar.propTypes = {
   onClose: PropTypes.func,
 };
 
-function getUpdatePhaseLabel(secondsRemaining, error) {
-  if (error) return error;
-  if (secondsRemaining <= 0) return "Reloading dashboard...";
-  return `Installing and restarting. Page will refresh in ${secondsRemaining}s.`;
-}
-
-function UpdateProgressPanel({ latestVersion, installCmd, error, secondsRemaining, estimatedSeconds, onCopy, copied }) {
-  const isError = !!error;
-  const icon = isError ? "error" : "sync";
-  const iconClass = isError ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400";
-  const progress = isError
-    ? 100
-    : Math.min(100, Math.max(5, Math.round(((estimatedSeconds - secondsRemaining) / estimatedSeconds) * 100)));
-
+function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {
+  const isCountingDown = countdown > 0;
   return (
     <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
       <div className="flex items-center gap-3 mb-4">
-        <div className={`flex items-center justify-center size-11 rounded-full ${iconClass}`}>
-          <span className="material-symbols-outlined text-[24px]">{icon}</span>
+        <div className="flex items-center justify-center size-11 rounded-full bg-amber-500/20 text-amber-400">
+          <span className="material-symbols-outlined text-[24px]">content_copy</span>
         </div>
         <div>
           <h2 className="text-lg font-semibold">Update 9Router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
-          <p className="text-xs text-white/60">{getUpdatePhaseLabel(secondsRemaining, error)}</p>
+          <p className="text-xs text-white/60">
+            {isDisconnected
+              ? "Server stopped. Paste the command into a terminal to install."
+              : isCountingDown
+                ? `Command copied. Server will stop in ${countdown}s...`
+                : "Copy the install command, then run it manually in a terminal."}
+          </p>
         </div>
       </div>
 
-      <div className="mb-4 rounded bg-white/5 border border-white/10 p-3">
-        <p className="text-sm text-white/80">
-          The app is updating in the background. Keep this page open; it will refresh automatically after the estimated restart window.
-        </p>
-      </div>
-
+      <p className="text-sm text-white/80 mb-2">Install command:</p>
       <div className="w-full px-3 py-2 rounded bg-white/5 mb-4">
         <code className="text-xs font-mono text-amber-400 break-all">{installCmd}</code>
       </div>
 
-      <div className="flex gap-2">
-        <Button variant="secondary" onClick={onCopy}>
-          {copied ? "Copied" : "Copy Command"}
+      <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
+        <li>Copy the command below.</li>
+        <li>Stop the server if it is still running.</li>
+        <li>Run the command in your terminal, with sudo if your npm global folder requires it.</li>
+      </ol>
+
+      {isDisconnected ? (
+        <Button variant="secondary" fullWidth onClick={() => globalThis.location.reload()}>
+          Reload Page
         </Button>
-        <Button variant="primary" fullWidth onClick={() => globalThis.location.reload()}>
-          {isError ? "Reload Page" : secondsRemaining > 0 ? `Reload Now (${secondsRemaining}s)` : "Reload Dashboard"}
-        </Button>
-      </div>
-      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-        <div className={`h-full rounded-full ${isError ? "bg-red-400" : "bg-amber-400"}`} style={{ width: `${progress}%` }} />
-      </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={onCancel} disabled={isCountingDown}>
+            Cancel
+          </Button>
+          <Button variant="primary" fullWidth onClick={onCopyAndShutdown} disabled={isCountingDown}>
+            {copied ? "Copied - shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-UpdateProgressPanel.propTypes = {
+ManualUpdatePanel.propTypes = {
   latestVersion: PropTypes.string,
   installCmd: PropTypes.string.isRequired,
-  error: PropTypes.string,
-  secondsRemaining: PropTypes.number.isRequired,
-  estimatedSeconds: PropTypes.number.isRequired,
-  onCopy: PropTypes.func.isRequired,
   copied: PropTypes.bool,
+  onCopyAndShutdown: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
+  countdown: PropTypes.number,
+  isDisconnected: PropTypes.bool,
 };
