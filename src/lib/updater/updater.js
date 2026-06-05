@@ -10,6 +10,7 @@ const fs = require("fs");
 const os = require("os");
 
 const packageName = process.env.UPDATER_PKG_NAME || "9router";
+const registryUrl = process.env.UPDATER_REGISTRY_URL || "";
 const port = parseInt(process.env.UPDATER_PORT || "20129", 10);
 const tailLines = parseInt(process.env.UPDATER_TAIL_LINES || "8", 10);
 const maxRetries = parseInt(process.env.UPDATER_RETRIES || "3", 10);
@@ -36,6 +37,7 @@ const logFile = path.join(updateDir, "install.log");
 const state = {
   phase: "starting",
   packageName,
+  registryUrl,
   startedAt: Date.now(),
   finishedAt: null,
   attempt: 0,
@@ -131,11 +133,13 @@ function sleep(ms) {
 function runInstall() {
   state.attempt += 1;
   setPhase("installing");
-  pushLog(`[updater] attempt ${state.attempt}/${maxRetries} — npm i -g ${packageName} --prefer-online`);
+  const registryArgs = registryUrl ? ["--registry", registryUrl] : [];
+  const commandText = ["npm", "i", "-g", packageName, "--prefer-online", ...registryArgs].join(" ");
+  pushLog(`[updater] attempt ${state.attempt}/${maxRetries} — ${commandText}`);
 
   const isWin = process.platform === "win32";
   const cmd = isWin ? "npm.cmd" : "npm";
-  const args = ["i", "-g", packageName, "--prefer-online"];
+  const args = ["i", "-g", packageName, "--prefer-online", ...registryArgs];
 
   const child = spawn(cmd, args, {
     stdio: ["ignore", "pipe", "pipe"],

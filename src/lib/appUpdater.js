@@ -159,9 +159,19 @@ export async function killAppProcesses() {
 // Resolve npx/9router binary to relaunch after update (cross-platform)
 function resolveRelaunchCommand() {
   const isWin = process.platform === "win32";
-  // Prefer `npx 9router` — works regardless of global bin path changes after npm i -g
+  // Prefer npx — works regardless of global bin path changes after npm i -g.
   const npx = isWin ? "npx.cmd" : "npx";
-  return { cmd: npx, args: [UPDATER_CONFIG.npmPackageName] };
+  return {
+    cmd: npx,
+    args: [
+      "--yes",
+      "--package",
+      UPDATER_CONFIG.npmPackageName,
+      "--registry",
+      UPDATER_CONFIG.npmRegistryUrl,
+      "9router",
+    ],
+  };
 }
 
 // Spawn detached headless updater (Node process) then exit current server
@@ -181,6 +191,7 @@ export function spawnUpdaterAndExit(packageName = UPDATER_CONFIG.npmPackageName)
     env: {
       ...process.env,
       UPDATER_PKG_NAME: packageName,
+      UPDATER_REGISTRY_URL: UPDATER_CONFIG.npmRegistryUrl,
       UPDATER_PORT: String(UPDATER_CONFIG.statusPort),
       UPDATER_TAIL_LINES: String(UPDATER_CONFIG.statusLogTailLines),
       UPDATER_RETRIES: String(UPDATER_CONFIG.installRetries),

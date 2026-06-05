@@ -1,29 +1,34 @@
-import https from "https";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import pkg from "../../../../package.json" with { type: "json" };
+import { UPDATER_CONFIG } from "@/shared/constants/config";
 
-const NPM_PACKAGE_NAME = "9router";
+const execFileAsync = promisify(execFile);
 
-// Fetch latest version from npm registry
-function fetchLatestVersion() {
-  return new Promise((resolve) => {
-    const req = https.get(
-      `https://registry.npmjs.org/${NPM_PACKAGE_NAME}/latest`,
-      { timeout: 4000 },
-      (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => {
-          try {
-            resolve(JSON.parse(data).version || null);
-          } catch {
-            resolve(null);
-          }
-        });
-      }
-    );
-    req.on("error", () => resolve(null));
-    req.on("timeout", () => { req.destroy(); resolve(null); });
-  });
+async function fetchLatestVersion() {
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  const args = [
+    "view",
+    `${UPDATER_CONFIG.npmPackageName}@latest`,
+    "version",
+    "--registry",
+    UPDATER_CONFIG.npmRegistryUrl,
+    "--prefer-online",
+    "--silent",
+  ];
+
+  try {
+    const { stdout } = await execFileAsync(npm, args, {
+      timeout: 8000,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+      env: process.env,
+    });
+    const version = stdout.trim().split(/\r?\n/).pop()?.trim();
+    return version || null;
+  } catch {
+    return null;
+  }
 }
 
 function compareVersions(a, b) {
@@ -41,5 +46,12 @@ export async function GET() {
   const currentVersion = pkg.version;
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 
-  return Response.json({ currentVersion, latestVersion, hasUpdate });
+  return Response.json({
+    currentVersion,
+    latestVersion,
+    hasUpdate,
+    packageName: UPDATER_CONFIG.npmPackageName,
+    registryUrl: UPDATER_CONFIG.npmRegistryUrl,
+    installCmd: UPDATER_CONFIG.installCmdLatest,
+  });
 }

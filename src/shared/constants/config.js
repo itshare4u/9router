@@ -15,9 +15,10 @@ export const GITHUB_CONFIG = {
 
 // Updater configuration
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
-  installCmd: "npm i -g 9router",
-  installCmdLatest: "npm i -g 9router@latest --prefer-online",
+  npmPackageName: "@itshare4u/9router",
+  npmRegistryUrl: "https://npm.pkg.github.com",
+  installCmd: "npm i -g @itshare4u/9router --registry=https://npm.pkg.github.com",
+  installCmdLatest: "npm i -g @itshare4u/9router@latest --prefer-online --registry=https://npm.pkg.github.com",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,

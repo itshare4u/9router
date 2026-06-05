@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
-const { spawn, exec, execSync } = require("child_process");
+const { spawn, exec, execSync, execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const https = require("https");
 const os = require("os");
 
 // Native spinner - no external dependency
@@ -59,8 +58,7 @@ try { ensureTrayRuntime({ silent: true }); } catch {}
 const PACKAGE_NAME = pkg.name;
 const APP_NAME = Object.keys(pkg.bin || {})[0] || "9router";
 const PACKAGE_REGISTRY_URL = ((pkg.publishConfig && pkg.publishConfig.registry) || "https://registry.npmjs.org/").replace(/\/+$/, "");
-const REGISTRY_PACKAGE_NAME = encodeURIComponent(PACKAGE_NAME);
-const INSTALL_CMD_LATEST = `npm i -g ${PACKAGE_NAME}@latest --prefer-online`;
+const INSTALL_CMD_LATEST = `npm i -g ${PACKAGE_NAME}@latest --prefer-online --registry=${PACKAGE_REGISTRY_URL}`;
 
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "0.0.0.0";
@@ -431,25 +429,33 @@ function checkForUpdate() {
       resolve(version);
     };
 
-    const req = https.get(`${PACKAGE_REGISTRY_URL}/${REGISTRY_PACKAGE_NAME}/latest`, { timeout: 3000 }, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        try {
-          const latest = JSON.parse(data);
-          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
-            done(latest.version);
-          } else {
-            done(null);
-          }
-        } catch (e) {
-          done(null);
-        }
-      });
+    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+    const req = execFile(npm, [
+      "view",
+      `${PACKAGE_NAME}@latest`,
+      "version",
+      "--registry",
+      PACKAGE_REGISTRY_URL,
+      "--prefer-online",
+      "--silent",
+    ], {
+      timeout: 6000,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    }, (error, stdout) => {
+      if (error) {
+        done(null);
+        return;
+      }
+      const latestVersion = stdout.trim().split(/\r?\n/).pop()?.trim();
+      if (latestVersion && compareVersions(latestVersion, pkg.version) > 0) {
+        done(latestVersion);
+      } else {
+        done(null);
+      }
     });
 
     req.on("error", () => done(null));
-    req.on("timeout", () => { req.destroy(); done(null); });
   });
 }
 

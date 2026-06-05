@@ -46,7 +46,9 @@ export default function Sidebar({ onClose }) {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [shutdownCountdown, setShutdownCountdown] = useState(0);
+  const [pollUpdater, setPollUpdater] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState(null);
+  const [updateError, setUpdateError] = useState("");
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
@@ -74,37 +76,68 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     setShowUpdateModal(false);
     setIsUpdating(true);
-  };
+    setPollUpdater(false);
+    setIsDisconnected(false);
+    setUpdateError("");
+    setUpdateStatus({ phase: "starting", packageName: updateInfo?.packageName, logTail: [] });
 
-  // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
-  const handleCopyAndShutdown = async () => {
-    try { await navigator.clipboard.writeText(INSTALL_CMD); } catch { /* clipboard blocked */ }
-    copy(INSTALL_CMD);
-    let remaining = UPDATER_CONFIG.shutdownCountdownSec;
-    setShutdownCountdown(remaining);
-    const timer = setInterval(() => {
-      remaining -= 1;
-      setShutdownCountdown(remaining);
-      if (remaining <= 0) {
-        clearInterval(timer);
-        fetch("/api/version/shutdown", { method: "POST" }).catch(() => {});
-        setIsDisconnected(true);
+    try {
+      const res = await fetch("/api/version/update", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        const message = data.message || "Failed to start updater";
+        setUpdateStatus({ phase: "error", done: true, success: false, error: message, logTail: [message] });
+        return;
       }
-    }, 1000);
+      setPollUpdater(true);
+    } catch (error) {
+      setUpdateError(error.message || "Waiting for updater status...");
+      setPollUpdater(true);
+    }
   };
 
-  const handleCancelUpdate = () => {
-    setIsUpdating(false);
-    setShutdownCountdown(0);
-  };
+  useEffect(() => {
+    if (!isUpdating || !pollUpdater) return undefined;
 
-  // Note: legacy updater poll removed. New flow: copy install cmd + shutdown server,
-  // user runs the command manually in another terminal.
+    let cancelled = false;
+    let failedPolls = 0;
+    let reloadTimer = null;
+    const statusUrl = `http://127.0.0.1:${UPDATER_CONFIG.statusPort}/update/status`;
 
+    const poll = async () => {
+      try {
+        const res = await fetch(statusUrl, { cache: "no-store" });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        failedPolls = 0;
+        setUpdateStatus(data);
+        setUpdateError("");
+        if (data.done && data.success && !reloadTimer) {
+          reloadTimer = setTimeout(() => {
+            globalThis.location.reload();
+          }, 5000);
+        }
+      } catch {
+        if (cancelled) return;
+        failedPolls += 1;
+        if (failedPolls > 8) {
+          setUpdateError("Updater status is not reachable yet. It may still be starting.");
+        }
+      }
+    };
+
+    poll();
+    const timer = setInterval(poll, UPDATER_CONFIG.statusPollIntervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      if (reloadTimer) clearTimeout(reloadTimer);
+    };
+  }, [isUpdating, pollUpdater]);
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -360,8 +393,8 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title="Update 9Router"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
+        message={`Start automatic update to v${updateInfo?.latestVersion || ""}? The server will restart during installation.`}
+        confirmText="Start Update"
         cancelText="Cancel"
         variant="primary"
       />
@@ -370,14 +403,13 @@ export default function Sidebar({ onClose }) {
       {(isDisconnected || isUpdating) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
           {isUpdating ? (
-            <ManualUpdatePanel
+            <UpdateProgressPanel
               latestVersion={updateInfo?.latestVersion}
               installCmd={INSTALL_CMD}
+              status={updateStatus}
+              error={updateError}
+              onCopy={() => copy(INSTALL_CMD)}
               copied={copied}
-              onCopyAndShutdown={handleCopyAndShutdown}
-              onCancel={handleCancelUpdate}
-              countdown={shutdownCountdown}
-              isDisconnected={isDisconnected}
             />
           ) : (
             <div className="text-center p-8">
@@ -401,61 +433,77 @@ Sidebar.propTypes = {
   onClose: PropTypes.func,
 };
 
-function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {
-  const isCountingDown = countdown > 0;
+function getUpdatePhaseLabel(status, error) {
+  if (status?.done && status.success) return "Update completed. Reloading dashboard shortly...";
+  if (status?.done && !status.success) return status.error || "Update failed.";
+  if (error) return error;
+  switch (status?.phase) {
+    case "waitingForExit":
+      return "Stopping the running server...";
+    case "installing":
+      return `Installing package${status.attempt ? ` (${status.attempt}/${status.maxRetries})` : ""}...`;
+    case "done":
+      return "Update completed.";
+    case "error":
+      return status.error || "Update failed.";
+    default:
+      return "Starting updater...";
+  }
+}
+
+function UpdateProgressPanel({ latestVersion, installCmd, status, error, onCopy, copied }) {
+  const isDone = status?.done === true;
+  const isSuccess = isDone && status?.success === true;
+  const isError = (isDone && !status?.success) || !!error;
+  const icon = isSuccess ? "check_circle" : isError ? "error" : "sync";
+  const iconClass = isSuccess ? "bg-green-500/20 text-green-400" : isError ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400";
+
   return (
     <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
       <div className="flex items-center gap-3 mb-4">
-        <div className="flex items-center justify-center size-11 rounded-full bg-amber-500/20 text-amber-400">
-          <span className="material-symbols-outlined text-[24px]">content_copy</span>
+        <div className={`flex items-center justify-center size-11 rounded-full ${iconClass}`}>
+          <span className="material-symbols-outlined text-[24px]">{icon}</span>
         </div>
         <div>
           <h2 className="text-lg font-semibold">Update 9Router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
-          <p className="text-xs text-white/60">
-            {isDisconnected
-              ? "Server stopped. Paste the command into a terminal to install."
-              : isCountingDown
-                ? `Command copied. Server will stop in ${countdown}s...`
-                : "Click the button below to copy the install command and shutdown."}
-          </p>
+          <p className="text-xs text-white/60">{getUpdatePhaseLabel(status, error)}</p>
         </div>
       </div>
 
-      <p className="text-sm text-white/80 mb-2">Install command:</p>
+      <div className="mb-4 rounded bg-white/5 border border-white/10 p-3 min-h-[96px] max-h-44 overflow-auto">
+        {status?.logTail?.length ? (
+          <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-white/70">{status.logTail.join("\n")}</pre>
+        ) : (
+          <p className="text-xs text-white/50">Waiting for updater logs...</p>
+        )}
+      </div>
+
       <div className="w-full px-3 py-2 rounded bg-white/5 mb-4">
         <code className="text-xs font-mono text-amber-400 break-all">{installCmd}</code>
       </div>
 
-      <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
-        <li>Click <strong>Copy & Shutdown</strong> below.</li>
-        <li>Paste the command into your terminal and press Enter.</li>
-        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">9router</code> again after install.</li>
-      </ol>
-
-      {isDisconnected ? (
-        <Button variant="secondary" fullWidth onClick={() => globalThis.location.reload()}>
-          Reload Page
+      <div className="flex gap-2">
+        <Button variant="secondary" onClick={onCopy}>
+          {copied ? "Copied" : "Copy Command"}
         </Button>
-      ) : (
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={isCountingDown}>
-            Cancel
-          </Button>
-          <Button variant="primary" fullWidth onClick={onCopyAndShutdown} disabled={isCountingDown}>
-            {copied ? "✓ Copied — shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
-          </Button>
+        <Button variant="primary" fullWidth onClick={() => globalThis.location.reload()} disabled={!isDone}>
+          {isSuccess ? "Reload Dashboard" : isDone ? "Reload Page" : "Updating..."}
+        </Button>
+      </div>
+      {!isDone && (
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-amber-400" />
         </div>
       )}
     </div>
   );
 }
 
-ManualUpdatePanel.propTypes = {
+UpdateProgressPanel.propTypes = {
   latestVersion: PropTypes.string,
   installCmd: PropTypes.string.isRequired,
+  status: PropTypes.object,
+  error: PropTypes.string,
+  onCopy: PropTypes.func.isRequired,
   copied: PropTypes.bool,
-  onCopyAndShutdown: PropTypes.func.isRequired,
-  onCancel: PropTypes.func.isRequired,
-  countdown: PropTypes.number,
-  isDisconnected: PropTypes.bool,
 };
