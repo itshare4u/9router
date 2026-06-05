@@ -156,6 +156,13 @@ export function removeConnection(connectionId) {
  * @returns {Promise<string|null>}
  */
 async function fetchProjectId(accessToken, signal) {
+    const { projectId, tierId } = await loadCodeAssistState(accessToken, signal);
+    if (projectId) return projectId;
+
+    return onboardUser(accessToken, tierId, signal);
+}
+
+async function loadCodeAssistState(accessToken, signal) {
     const response = await fetch(CLOUD_CODE_API.loadCodeAssist, {
         method: "POST",
         headers: { ...LOAD_CODE_ASSIST_HEADERS, "Authorization": `Bearer ${accessToken}` },
@@ -169,23 +176,24 @@ async function fetchProjectId(accessToken, signal) {
     }
 
     const data = await response.json();
-    const projectId = extractProjectId(data);
-    if (projectId) return projectId;
+    return {
+        data,
+        projectId: extractProjectId(data),
+        tierId: extractDefaultTierId(data),
+    };
+}
 
-    // Determine the tier to use for onboarding
-    let tierID = "legacy-tier";
-    if (Array.isArray(data.allowedTiers)) {
+function extractDefaultTierId(data) {
+    if (Array.isArray(data?.allowedTiers)) {
         for (const tier of data.allowedTiers) {
             if (tier && typeof tier === "object" && tier.isDefault === true) {
-                if (tier.id && typeof tier.id === "string" && tier.id.trim()) {
-                    tierID = tier.id.trim();
-                    break;
-                }
+                const id = normalizeProjectString(tier.id);
+                if (id) return id;
             }
         }
     }
 
-    return onboardUser(accessToken, tierID, signal);
+    return "legacy-tier";
 }
 
 /**
@@ -235,12 +243,21 @@ async function onboardUser(accessToken, tierID, externalSignal) {
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                throw new Error("onboardUser done but no project_id in response");
+
+                console.log("[ProjectId] onboardUser done without project_id; reloading loadCodeAssist...");
+                const reloadedProjectId = await waitForProjectIdAfterOnboard(accessToken, externalSignal);
+                if (reloadedProjectId) {
+                    console.log(`[ProjectId] Successfully loaded project ID after onboarding: ${reloadedProjectId}`);
+                    return reloadedProjectId;
+                }
+
+                console.warn("[ProjectId] onboardUser done but no project_id available after loadCodeAssist refresh");
+                return null;
             }
 
             // Server not done yet – wait and retry
             console.log(`[ProjectId] Onboard attempt ${attempt}/${MAX_ATTEMPTS}: not done yet, waiting...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await sleep(2000);
 
         } catch (error) {
             clearTimeout(timeoutId);
@@ -255,7 +272,7 @@ async function onboardUser(accessToken, tierID, externalSignal) {
             }
             // Continue to next attempt instead of throwing (which would skip remaining retries)
             console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${error.message}, retrying...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await sleep(2000);
         } finally {
             clearTimeout(timeoutId);
             externalSignal?.removeEventListener("abort", forwardAbort);
@@ -265,20 +282,57 @@ async function onboardUser(accessToken, tierID, externalSignal) {
     return null;
 }
 
+async function waitForProjectIdAfterOnboard(accessToken, externalSignal) {
+    const MAX_LOAD_ATTEMPTS = 5;
+
+    for (let attempt = 1; attempt <= MAX_LOAD_ATTEMPTS; attempt++) {
+        if (externalSignal?.aborted) return null;
+
+        try {
+            const { projectId } = await loadCodeAssistState(accessToken, externalSignal);
+            if (projectId) return projectId;
+        } catch (error) {
+            console.warn(`[ProjectId] loadCodeAssist after onboard attempt ${attempt} failed: ${error.message}`);
+        }
+
+        if (attempt < MAX_LOAD_ATTEMPTS) {
+            await sleep(2000);
+        }
+    }
+
+    return null;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /**
  * Extract project ID from loadCodeAssist response.
  */
 function extractProjectId(data) {
-    if (!data) return null;
+    const direct = normalizeProjectString(data);
+    if (direct) return direct;
 
-    if (typeof data.cloudaicompanionProject === "string") {
-        const id = data.cloudaicompanionProject.trim();
+    if (!data || typeof data !== "object") return null;
+
+    const knownProjectKeys = [
+        "cloudaicompanionProject",
+        "cloudAiCompanionProject",
+        "projectId",
+        "project_id",
+        "project",
+    ];
+
+    for (const key of knownProjectKeys) {
+        const id = normalizeProjectString(data[key]);
         if (id) return id;
     }
 
-    if (data.cloudaicompanionProject && typeof data.cloudaicompanionProject === "object") {
-        const id = data.cloudaicompanionProject.id;
-        if (typeof id === "string" && id.trim()) return id.trim();
+    const knownContainers = ["response", "result", "metadata"];
+    for (const key of knownContainers) {
+        const id = extractProjectId(data[key]);
+        if (id) return id;
     }
 
     return null;
@@ -288,18 +342,27 @@ function extractProjectId(data) {
  * Extract project ID from onboardUser response.
  */
 function extractProjectIdFromOnboard(data) {
-    if (!data?.response) return null;
+    return extractProjectId(data?.response) || extractProjectId(data);
+}
 
-    const project = data.response.cloudaicompanionProject;
-
-    if (typeof project === "string") {
-        const id = project.trim();
-        if (id) return id;
+function normalizeProjectString(value) {
+    if (typeof value === "string") {
+        const id = value.trim();
+        return id || null;
     }
 
-    if (project && typeof project === "object") {
-        const id = project.id;
-        if (typeof id === "string" && id.trim()) return id.trim();
+    if (!value || typeof value !== "object") return null;
+
+    for (const key of ["id", "projectId", "project_id"]) {
+        if (typeof value[key] === "string") {
+            const id = value[key].trim();
+            if (id) return id;
+        }
+    }
+
+    if (typeof value.project === "string") {
+        const id = value.project.trim();
+        if (id) return id;
     }
 
     return null;

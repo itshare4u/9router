@@ -6,6 +6,7 @@ const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_RE
 
 let fs = null;
 let path = null;
+let os = null;
 let LOGS_DIR = null;
 
 // Lazy load Node.js modules (avoid top-level await)
@@ -14,10 +15,23 @@ async function ensureNodeModules() {
   try {
     fs = await import("fs");
     path = await import("path");
-    LOGS_DIR = path.join(typeof process !== "undefined" && process.cwd ? process.cwd() : ".", "logs");
+    os = await import("os");
+    LOGS_DIR = resolveLogsDir();
   } catch {
     // Running in non-Node environment (Worker, Browser, etc.)
   }
+}
+
+function resolveLogsDir() {
+  const configured = process.env?.NINE_ROUTER_LOGS_DIR || process.env?.ROUTER_LOGS_DIR;
+  if (configured) return configured;
+
+  if (process.platform === "win32") {
+    const roaming = process.env?.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+    return path.join(roaming, "9router", "logs");
+  }
+
+  return path.join(os.homedir(), ".9router", "logs");
 }
 
 // Format timestamp for folder name: 20251228_143045_123
